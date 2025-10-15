@@ -1,0 +1,17 @@
+[project]
+name = "plot-helper"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "jax>=0.7.2",
+    "matplotlib>=3.10.7",
+    "numpy>=2.3.3",
+    "scipy>=1.16.2",
+    "seaborn>=0.13.2",
+    "truncnormkde",
+]
+
+[tool.uv.sources]
+truncnormkde = { path = "../truncnormkde", editable = true }
