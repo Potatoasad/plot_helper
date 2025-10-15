@@ -113,7 +113,7 @@ def make_corner_plot(all_data : List,
                      legend_x_position=None, legend_y_position=None, CI_fontsize=15,
                      boundary_bias=False, fill=True, quantiles=[0.9, 0.5], legend=True, 
                      boundaries={},
-                     truth=None):
+                     truth=None, figsize=None):
 
     if variable_labels is None:
         variable_labels = variables
@@ -131,7 +131,9 @@ def make_corner_plot(all_data : List,
 
      # Make figure 
     nVars = len(variables)
-    fig, axes = plt.subplots(nVars, nVars, figsize=(nVars*3,nVars*3))
+    if figsize is None:
+        figsize = (nVars*3,nVars*3)
+    fig, axes = plt.subplots(nVars, nVars, figsize=figsize)
 
     one_d_plot = False
     #print(type(axes))
