@@ -41,7 +41,7 @@ fig, axes = make_corner_plot(
 );
 ```
 
-<img src="./examples/example_2D.png" style="zoom:50%;" />
+<img src="./examples/example_2D.png" width="600" />
 
 
 
@@ -60,7 +60,7 @@ fig, axes = make_corner_plot(
 );
 ```
 
-<img src="./examples/example_1D.png" style="zoom:50%;" />
+<img src="./examples/example_1D.png" width="300" />
 
 Lets do a full corner plot of all 3 variables
 
@@ -78,4 +78,4 @@ fig, axes = make_corner_plot(
 );
 ```
 
-<img src="./examples/example_ND.png" style="zoom:50%;" />
+<img src="./examples/example_ND.png" width="900" />
