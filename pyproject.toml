@@ -14,4 +14,4 @@ dependencies = [
 ]
 
 [tool.uv.sources]
-truncnormkde = { path = "../truncnormkde", editable = true }
+truncnormkde = { git = "https://github.com/Potatoasad/truncnormkde" }

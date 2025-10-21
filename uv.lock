@@ -540,7 +540,7 @@ requires-dist = [
     { name = "numpy", specifier = ">=2.3.3" },
     { name = "scipy", specifier = ">=1.16.2" },
     { name = "seaborn", specifier = ">=0.13.2" },
-    { name = "truncnormkde", editable = "../truncnormkde" },
+    { name = "truncnormkde", git = "https://github.com/Potatoasad/truncnormkde" },
 ]
 
 [[package]]
@@ -660,7 +660,7 @@ wheels = [
 [[package]]
 name = "truncnormkde"
 version = "0.1.0"
-source = { editable = "../truncnormkde" }
+source = { git = "https://github.com/Potatoasad/truncnormkde#0b685a0dd6300239a25b40d6a2b9139e42747484" }
 
 [[package]]
 name = "tzdata"
