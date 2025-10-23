@@ -3,7 +3,18 @@ import matplotlib.colors
 import matplotlib.pyplot as plt
 from matplotlib import style
 import os
-style.use(os.path.dirname(os.path.realpath(__file__))+'/plotting.mplstyle')
+#print(__file__)
+#style.use(os.path.dirname(os.path.realpath(__file__))+'/plotting.mplstyle')
+from importlib.resources import files, as_file
+from matplotlib import style as mpl_style
+
+def use_default_style():
+    res = files("plot_helper").joinpath("plotting.mplstyle")
+    with as_file(res) as p:
+        mpl_style.use(str(p))
+
+# Auto-apply on import (optional):
+use_default_style()
 
 def getBounds(data):
 

@@ -15,17 +15,12 @@ from importlib.resources import files, as_file
 from matplotlib import style as mpl_style
 
 def use_default_style():
-    res = files("plot_helper") / "plotting.mplstyle"
+    res = files("plot_helper").joinpath("plotting.mplstyle")
     with as_file(res) as p:
         mpl_style.use(str(p))
 
 # Auto-apply on import (optional):
-try:
-    use_default_style()
-except Exception:
-    # stay quiet if matplotlib isn't available or in headless builds
-    pass
-
+use_default_style()
 default_pallete = sns.color_palette('Dark2', 20)
 
 def makedict(x):

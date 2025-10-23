@@ -1,5 +1,5 @@
 [project]
-name = "plot-helper"
+name = "plot_helper"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
@@ -16,11 +16,18 @@ dependencies = [
 [tool.uv.sources]
 truncnormkde = { git = "https://github.com/Potatoasad/truncnormkde" }
 
-[tool.setuptools.packages.find]
-include = ["plot_helper*"]
-
-[tool.setuptools.package-data]
-yourpkg = ["*.mplstyle"]
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
+# ...
+# By default, include-package-data is true in pyproject.toml,
+# so you do NOT have to specify this line.
 include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+plot_helper = ["*.mplstyle"]
