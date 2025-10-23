@@ -10,7 +10,21 @@ from matplotlib.lines import Line2D
 import scipy
 from .makeCorner import getBounds
 
-style.use(os.path.dirname(os.path.realpath(__file__))+'/plotting.mplstyle')
+#style.use(os.path.dirname(os.path.realpath(__file__))+'/plotting.mplstyle')
+from importlib.resources import files, as_file
+from matplotlib import style as mpl_style
+
+def use_default_style():
+    res = files("plot_helper") / "plotting.mplstyle"
+    with as_file(res) as p:
+        mpl_style.use(str(p))
+
+# Auto-apply on import (optional):
+try:
+    use_default_style()
+except Exception:
+    # stay quiet if matplotlib isn't available or in headless builds
+    pass
 
 default_pallete = sns.color_palette('Dark2', 20)
 

@@ -16,10 +16,11 @@ dependencies = [
 [tool.uv.sources]
 truncnormkde = { git = "https://github.com/Potatoasad/truncnormkde" }
 
+[tool.setuptools.packages.find]
+include = ["plot_helper*"]
 
 [tool.setuptools.package-data]
 yourpkg = ["*.mplstyle"]
 
-# Optional but recommended for source distributions:
 [tool.setuptools]
 include-package-data = true
