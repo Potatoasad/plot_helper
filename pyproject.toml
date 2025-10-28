@@ -10,7 +10,7 @@ dependencies = [
     "numpy",
     "scipy",
     "seaborn",
-    "truncnormkde",
+    "truncnormkde @ git+https://github.com/potatoasad/truncnormkde",
 ]
 
 [tool.uv.sources]
