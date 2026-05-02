@@ -3,6 +3,7 @@
 My custom library to perform quick corner / histogram plots to my liking. Pretty much built on top of the structure / code / style of [`makecorner`](https://github.com/tcallister/makecorner) (check that out if you like that).
 
 - This utilizes boundary unbiased KDEs ala [`truncnormkde`](https://github.com/Potatoasad/truncnormkde) to get better contour shapes at the boundary (use `boundary_bias=True` for that)
+- You can also use `boundary_method="reflection"` for a reflection-based bounded KDE instead of the truncnorm-based approach
 - Having multiple plots on the same corner with as little friction as possible is a focus
 
 Please let me know if there's something I could be doing better with the styling for a publication ready plot 
@@ -38,6 +39,22 @@ fig, axes = make_corner_plot(
     legend_x_position=1, legend_y_position=0,
     quantiles=[0.9, 0.5, 0.1], fill=True, boundary_bias=True, # boundary bias=True uses the truncnormkde to get less boundary bias
     scatter=False
+);
+```
+
+The same plot using reflection instead of truncnorm boundary handling:
+
+```python
+fig, axes = make_corner_plot(
+    all_data=[make_dict(df1), make_dict(df2)],
+    model_labels=["first", "second"],
+    variables=["x1", "x2"],
+    variable_labels=[r"$x_1$", r"$x_2$"],
+    limits=[(-3, 3), (-3, 3)],
+    kde=True, scatter=False,
+    quantiles=[0.9, 0.5, 0.1], fill=True,
+    boundary_method="reflection",
+    boundaries={"x1": [-3, 3], "x2": [-3, 3]},
 );
 ```
 
@@ -79,3 +96,39 @@ fig, axes = make_corner_plot(
 ```
 
 <img src="./examples/example_ND.png" width="900" />
+
+You can also omit `model_labels` and `variables`. In that case `model_labels` defaults to blank labels and `variables` is inferred as the ordered union of keys/columns across all datasets:
+
+```python
+fig, axes = make_corner_plot(
+    all_data=[make_dict(df1), make_dict(df2)],
+    kde=True,
+    scatter=False,
+);
+```
+
+For the more flexible side-by-side 2D comparison layout, use `make_2D_comparison2`:
+
+```python
+from plot_helper import make_2D_comparison2
+
+fig = make_2D_comparison2(
+    df1,
+    variables=["x1", "x2"],
+    variable_labels=[r"$x_1$", r"$x_2$"],
+    a=[-3, -3], b=[3, 3],
+)
+```
+
+```python
+fig = make_2D_comparison2(
+    [df1, df2],
+    variables=["x1", "x2"],
+    variable_labels=[r"$x_1$", r"$x_2$"],
+    a=[-3, -3], b=[3, 3],
+    model_labels=["first", "second"],
+    scatter=False,
+    bins=[20, 20],
+    boundary_method="reflection",
+)
+```

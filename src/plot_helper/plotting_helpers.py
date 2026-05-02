@@ -32,6 +32,29 @@ def make_custom_legend(ax, names, colors):
     ax.legend(custom_lines, names)
     return ax
 
+def _data_keys(data):
+    if hasattr(data, "columns"):
+        return list(data.columns)
+    if hasattr(data, "keys"):
+        return list(data.keys())
+    raise TypeError("Data entries must be DataFrames or dict-like objects with keys.")
+
+def _get_series_values(data, key):
+    values = data[key]
+    if hasattr(values, "values"):
+        values = values.values
+    return np.asarray(values)
+
+def _infer_variables(all_data):
+    variables = []
+    seen = set()
+    for data in all_data:
+        for key in _data_keys(data):
+            if key not in seen:
+                variables.append(key)
+                seen.add(key)
+    return variables
+
 def get_means_and_sigs(loc, scale, a=0, b=1):
     a_l, b_l = (a - loc) / scale, (b - loc) / scale
     mu_s = scipy.stats.truncnorm.mean(loc=loc, scale=scale, a=a_l, b=b_l)
@@ -73,33 +96,77 @@ def set_multicolor_title(ax, title_strings, title_colors, font_size=20, font_wei
         ax.text(x_pos, title_y_pos, text, fontsize=font_size, color=color,
                 ha='center', va='bottom', transform=ax.transAxes)
 
-def add_contours(ax, x,y,a,b, color=default_pallete[0], linestyles='solid', 
-                linewidths=2, quantiles=[0.9, 0.5], fill=True):
-    from truncnormkde import BoundedKDE, compute_bandwidth
+def _compute_contour_levels(computed_values, a, b, quantiles):
     from scipy import interpolate
-    X = jnp.stack([x,y], axis=-1)
-    
-    bw = compute_bandwidth(X)
-    bkde = BoundedKDE(a, b, bw);
-    gridsize = 100
-    
-    xs,ys = jnp.linspace(a[0],b[0],gridsize), jnp.linspace(a[1],b[1],gridsize)
-    x_2d, y_2d = jnp.meshgrid(xs,ys)
-    X_grid = jnp.stack([x_2d, y_2d],axis=-1)
-    
-    KDE = BoundedKDE(a=a, b=b, bandwidth=bw)
-    computed_values = KDE(X_grid, X)
 
-    dx = (b[0] - a[0])/gridsize;
-    dy = (b[1] - a[1])/gridsize;
-    ts = np.linspace(0,computed_values.max(),gridsize)
-    quantils = ((computed_values[:,:,None] > ts[None, None, :]) * computed_values[:,:,None]).sum(axis=(0,1)) * dx * dy
-    
-    f = interpolate.interp1d(quantils, ts)
-    t_contours = f(np.array(quantiles))
+    gridsize_x, gridsize_y = computed_values.shape[1], computed_values.shape[0]
+    dx = (b[0] - a[0]) / gridsize_x
+    dy = (b[1] - a[1]) / gridsize_y
+    ts = np.linspace(0, float(np.max(computed_values)), max(gridsize_x, gridsize_y))
+    quantils = (
+        (computed_values[:, :, None] > ts[None, None, :]) * computed_values[:, :, None]
+    ).sum(axis=(0, 1)) * dx * dy
+    f = interpolate.interp1d(quantils, ts, bounds_error=False, fill_value=(ts[0], ts[-1]))
+    return f(np.array(quantiles))
+
+def _resolve_boundary_method(boundary_method, boundary_bias):
+    if boundary_method is None:
+        return 'truncnorm' if boundary_bias else 'none'
+    if boundary_method is True:
+        return 'truncnorm'
+    if boundary_method is False:
+        return 'none'
+    return boundary_method
+
+def _evaluate_reflection_kde(x, y, a, b, gridsize=100, bandwidth_scale=1):
+    kde = scipy.stats.gaussian_kde(np.vstack([x, y]))
+    kde.set_bandwidth(kde.factor * bandwidth_scale)
+
+    xs = np.linspace(a[0], b[0], gridsize)
+    ys = np.linspace(a[1], b[1], gridsize)
+    x_2d, y_2d = np.meshgrid(xs, ys)
+    points = np.vstack([x_2d.ravel(), y_2d.ravel()])
+
+    reflected_points = [
+        points,
+        np.vstack([2 * a[0] - points[0], points[1]]),
+        np.vstack([2 * b[0] - points[0], points[1]]),
+        np.vstack([points[0], 2 * a[1] - points[1]]),
+        np.vstack([points[0], 2 * b[1] - points[1]]),
+    ]
+
+    values = sum(kde(candidate) for candidate in reflected_points)
+    return x_2d, y_2d, values.reshape(gridsize, gridsize)
+
+def add_contours(ax, x, y, a, b, color=default_pallete[0], linestyles='solid',
+                linewidths=2, quantiles=[0.9, 0.5], fill=True,
+                boundary_method='truncnorm', gridsize=100, bandwidth_scale=1):
+    from truncnormkde import BoundedKDE, compute_bandwidth
+    boundary_method = _resolve_boundary_method(boundary_method, boundary_bias=False)
+
+    if boundary_method == 'reflection':
+        x_2d, y_2d, computed_values = _evaluate_reflection_kde(
+            np.asarray(x), np.asarray(y), np.asarray(a), np.asarray(b),
+            gridsize=gridsize, bandwidth_scale=bandwidth_scale
+        )
+    elif boundary_method == 'truncnorm':
+        X = jnp.stack([x, y], axis=-1)
+        bw = compute_bandwidth(X) * bandwidth_scale
+        xs, ys = jnp.linspace(a[0], b[0], gridsize), jnp.linspace(a[1], b[1], gridsize)
+        x_2d, y_2d = jnp.meshgrid(xs, ys)
+        X_grid = jnp.stack([x_2d, y_2d], axis=-1)
+        KDE = BoundedKDE(a=a, b=b, bandwidth=bw)
+        computed_values = np.asarray(KDE(X_grid, X))
+        x_2d = np.asarray(x_2d)
+        y_2d = np.asarray(y_2d)
+    else:
+        raise ValueError("boundary_method must be one of None, 'none', 'truncnorm', or 'reflection'.")
+
+    t_contours = _compute_contour_levels(np.asarray(computed_values), np.asarray(a), np.asarray(b), quantiles)
     
     quantile_plot = ax.contour(x_2d, y_2d, computed_values, colors=[color]*len(t_contours), 
-                                levels=t_contours, linewidths=[linewidths]*len(t_contours))
+                                levels=t_contours, linewidths=[linewidths]*len(t_contours),
+                                linestyles=[linestyles] * len(t_contours))
 
     if fill:
         cmax = computed_values.max()
@@ -110,8 +177,8 @@ def add_contours(ax, x,y,a,b, color=default_pallete[0], linestyles='solid',
         cont = ax.contourf(x_2d, y_2d, computed_values, levels=[0, t_contours[0]], colors=[color], alpha=0)
 
 def make_corner_plot(all_data : List,
-                     model_labels : List[str],
-                     variables : List[str],
+                     model_labels : Optional[List[str]] = None,
+                     variables : Optional[List[str]] = None,
                      variable_labels : Optional[List[str]] = None,
                      limits : Optional[List[Tuple]] = None,
                      nbins=20,
@@ -122,7 +189,16 @@ def make_corner_plot(all_data : List,
                      legend_x_position=None, legend_y_position=None, CI_fontsize=15,
                      boundary_bias=False, fill=True, quantiles=[0.9, 0.5], legend=True, 
                      boundaries={},
+                     boundary_method=None,
                      truth=None, figsize=None):
+
+    if model_labels is None:
+        model_labels = [''] * len(all_data)
+
+    if variables is None:
+        variables = _infer_variables(all_data)
+
+    boundary_method = _resolve_boundary_method(boundary_method, boundary_bias)
 
     if variable_labels is None:
         variable_labels = variables
@@ -133,8 +209,9 @@ def make_corner_plot(all_data : List,
         limits = [None for _ in range(len(variables))]
 
     for k,var in enumerate(variables):
-        the_min = min([np.min(data[var]) for data in all_data])
-        the_max = max([np.max(data[var]) for data in all_data])
+        data_with_var = [data for data in all_data if var in _data_keys(data)]
+        the_min = min([np.min(_get_series_values(data, var)) for data in data_with_var])
+        the_max = max([np.max(_get_series_values(data, var)) for data in data_with_var])
         if limits[k] is None:
             limits[k] = (the_min, the_max)
 
@@ -174,10 +251,10 @@ def make_corner_plot(all_data : List,
         text_colors = [];
         for j,data in enumerate(all_data): 
             
-            if var in data.keys():
+            if var in _data_keys(data):
 
                 # Fetch data for this variable
-                samples = np.asarray(data[var])
+                samples = _get_series_values(data, var)
                 
                 # Plot histogram
                 ax.hist(samples, bins=np.linspace(min_lim,max_lim,nbins), histtype='step', 
@@ -230,10 +307,11 @@ def make_corner_plot(all_data : List,
             elif i_row>i_col:
                 #print(f'Plotting 2d hist for {variables[i_col]} and {variables[i_row]}')
                 for j,data in enumerate(all_data):
-                    if variables[i_col] in data.keys() and variables[i_row] in data.keys():
+                    keys = _data_keys(data)
+                    if variables[i_col] in keys and variables[i_row] in keys:
                         # Plot histogram
                         if kde:
-                            if not boundary_bias:
+                            if boundary_method in [None, 'none']:
                                 quantiles_sorted = quantiles.copy()
                                 quantiles_sorted.sort()
                                 if quantiles_sorted[-1] != 1:
@@ -266,7 +344,8 @@ def make_corner_plot(all_data : List,
                                                  a=np.array([x_lims[0], y_lims[0]]), 
                                                  b=np.array([x_lims[1], y_lims[1]]),
                                                  color=colors[j], linestyles=linestyles[j],
-                                                 linewidths=2, quantiles=quantiles_sorted, fill=fill)
+                                                 linewidths=2, quantiles=quantiles_sorted, fill=fill,
+                                                 boundary_method=boundary_method)
                                 ax.set_xlabel(None); ax.set_ylabel(None);
 
                         if scatter:
@@ -316,6 +395,108 @@ def make_corner_plot(all_data : List,
 
     plt.subplots_adjust(hspace=0.1, wspace=0.1)
     return fig, axes
+
+def make_2D_comparison2(posterior_samples_list,
+                       variables=['chi_1', 'chi_2'],
+                       variable_labels=[r'$\chi_1$', r'$\chi_2$'],
+                       a=[0, 0], b=[1, 1],
+                       model_labels=None,
+                       quantiles=[0.9, 0.5, 0.1],
+                       legend_location='upper right',
+                       bandwidth_scale=1,
+                       legend=True,
+                       legend_face_color=(1, 1, 1, 0.1),
+                       colors=None,
+                       scatter=False,
+                       alpha=0.1,
+                       figsize=(6, 6),
+                       dpi=200,
+                       grid_size=100, bins=None,
+                       boundary_method='truncnorm'):
+    if not isinstance(posterior_samples_list, list):
+        posterior_samples_list = [posterior_samples_list]
+
+    n = len(posterior_samples_list)
+    if model_labels is None:
+        model_labels = [f'Set {i+1}' for i in range(n)]
+    if colors is None:
+        colors = [default_pallete[i + 1] for i in range(n)]
+
+    x_name, y_name = variables
+
+    fig = plt.figure(figsize=figsize, dpi=dpi)
+    gs = gridspec.GridSpec(2, 2,
+                           width_ratios=[0.8, 0.2],
+                           height_ratios=[0.2, 0.8])
+
+    ax_scatter = fig.add_subplot(gs[1, 0])
+    ax_hist_x = fig.add_subplot(gs[0, 0], sharex=ax_scatter)
+    ax_hist_y = fig.add_subplot(gs[1, 1], sharey=ax_scatter)
+
+    if bins is None:
+        bin_x = bin_y = 'auto'
+    elif isinstance(bins, (list, tuple)) and len(bins) == 2:
+        bin_x, bin_y = bins
+    else:
+        bin_x = bin_y = bins
+
+    all_hist_x, all_hist_y = [], []
+
+    for i, ps in enumerate(posterior_samples_list):
+        color = colors[i]
+        x_values = _get_series_values(ps, x_name)
+        y_values = _get_series_values(ps, y_name)
+
+        if scatter:
+            ax_scatter.scatter(
+                x_values, y_values, color=color, alpha=alpha, s=10, edgecolors='none'
+            )
+            ax_scatter.set_xlim(a[0], b[0])
+            ax_scatter.set_ylim(a[1], b[1])
+        else:
+            add_contours(
+                ax_scatter, x_values, y_values, a=np.array(a), b=np.array(b),
+                quantiles=quantiles, color=color, boundary_method=boundary_method,
+                gridsize=grid_size, bandwidth_scale=bandwidth_scale
+            )
+
+        hist_x, _ = np.histogram(x_values, bins=bin_x, density=True)
+        ax_hist_x.hist(x_values, bins=bin_x, density=True,
+                       color=color, histtype='step', linewidth=2)
+        ax_hist_x.hist(x_values, bins=bin_x, density=True,
+                       color=color, histtype='bar', alpha=0.5)
+        all_hist_x.append(hist_x)
+
+        hist_y, _ = np.histogram(y_values, bins=bin_y, density=True)
+        ax_hist_y.hist(y_values, bins=bin_y, density=True,
+                       orientation='horizontal', color=color, histtype='step', linewidth=2)
+        ax_hist_y.hist(y_values, bins=bin_y, density=True,
+                       orientation='horizontal', color=color, histtype='bar', alpha=0.5)
+        all_hist_y.append(hist_y)
+
+    if all_hist_x:
+        ax_hist_x.set_ylim(0, max(float(np.max(p)) for p in all_hist_x) * 1.1)
+    if all_hist_y:
+        ax_hist_y.set_xlim(1e-2, max(float(np.max(p)) for p in all_hist_y) * 1.1)
+
+    plt.setp(ax_hist_x.get_xticklabels(), visible=False)
+    plt.setp(ax_hist_x.get_yticklabels(), visible=False)
+    plt.setp(ax_hist_y.get_xticklabels(), visible=False)
+    plt.setp(ax_hist_y.get_yticklabels(), visible=False)
+
+    ax_scatter.set_xlabel(variable_labels[0])
+    ax_scatter.set_ylabel(variable_labels[1])
+
+    if legend:
+        handles = [Line2D([], [], color=colors[i], ls='solid', label=model_labels[i])
+                   for i in range(n)]
+        leg = ax_scatter.legend(handles=handles, loc=legend_location, fontsize=15, frameon=True)
+        leg.get_frame().set_facecolor(legend_face_color)
+        leg.get_frame().set_edgecolor('none')
+
+    plt.tight_layout()
+    plt.show()
+    return fig
 
 
 import matplotlib.pyplot as plt
