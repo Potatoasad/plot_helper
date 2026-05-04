@@ -22,6 +22,7 @@ def use_default_style():
 # Auto-apply on import (optional):
 use_default_style()
 default_pallete = sns.color_palette('Dark2', 20)
+_DEFAULT_MODEL_LABELS = list("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
 
 def makedict(x):
     return {k : jnp.array(x[k].values) for k in x.columns}
@@ -44,6 +45,15 @@ def _get_series_values(data, key):
     if hasattr(values, "values"):
         values = values.values
     return np.asarray(values)
+
+def _quantile_to_alpha(q, fill_alpha_map=None):
+    if fill_alpha_map is None:
+        return float(1 - q)
+    if callable(fill_alpha_map):
+        return float(fill_alpha_map(q))
+    if isinstance(fill_alpha_map, dict):
+        return float(fill_alpha_map.get(q, 1 - q))
+    return float(1 - q)
 
 def _infer_variables(all_data):
     variables = []
@@ -109,6 +119,10 @@ def _compute_contour_levels(computed_values, a, b, quantiles):
     f = interpolate.interp1d(quantils, ts, bounds_error=False, fill_value=(ts[0], ts[-1]))
     return f(np.array(quantiles))
 
+def _compute_contour_quantile_levels(computed_values, a, b, quantiles):
+    levels = _compute_contour_levels(computed_values, a, b, quantiles)
+    return [(float(q), float(level)) for q, level in zip(quantiles, levels)]
+
 def _resolve_boundary_method(boundary_method, boundary_bias):
     if boundary_method is None:
         return 'truncnorm' if boundary_bias else 'none'
@@ -138,9 +152,21 @@ def _evaluate_reflection_kde(x, y, a, b, gridsize=100, bandwidth_scale=1):
     values = sum(kde(candidate) for candidate in reflected_points)
     return x_2d, y_2d, values.reshape(gridsize, gridsize)
 
+def _evaluate_plain_kde(x, y, a, b, gridsize=100, bandwidth_scale=1):
+    kde = scipy.stats.gaussian_kde(np.vstack([x, y]))
+    kde.set_bandwidth(kde.factor * bandwidth_scale)
+
+    xs = np.linspace(a[0], b[0], gridsize)
+    ys = np.linspace(a[1], b[1], gridsize)
+    x_2d, y_2d = np.meshgrid(xs, ys)
+    points = np.vstack([x_2d.ravel(), y_2d.ravel()])
+    values = kde(points)
+    return x_2d, y_2d, values.reshape(gridsize, gridsize)
+
 def add_contours(ax, x, y, a, b, color=default_pallete[0], linestyles='solid',
                 linewidths=2, quantiles=[0.9, 0.5], fill=True,
-                boundary_method='truncnorm', gridsize=100, bandwidth_scale=1):
+                boundary_method='truncnorm', gridsize=100, bandwidth_scale=1,
+                fill_alpha_map=None):
     from truncnormkde import BoundedKDE, compute_bandwidth
     boundary_method = _resolve_boundary_method(boundary_method, boundary_bias=False)
 
@@ -159,10 +185,18 @@ def add_contours(ax, x, y, a, b, color=default_pallete[0], linestyles='solid',
         computed_values = np.asarray(KDE(X_grid, X))
         x_2d = np.asarray(x_2d)
         y_2d = np.asarray(y_2d)
+    elif boundary_method in [None, 'none']:
+        x_2d, y_2d, computed_values = _evaluate_plain_kde(
+            np.asarray(x), np.asarray(y), np.asarray(a), np.asarray(b),
+            gridsize=gridsize, bandwidth_scale=bandwidth_scale
+        )
     else:
         raise ValueError("boundary_method must be one of None, 'none', 'truncnorm', or 'reflection'.")
 
-    t_contours = _compute_contour_levels(np.asarray(computed_values), np.asarray(a), np.asarray(b), quantiles)
+    t_contour_pairs = _compute_contour_quantile_levels(
+        np.asarray(computed_values), np.asarray(a), np.asarray(b), quantiles
+    )
+    t_contours = np.array(sorted(level for _, level in t_contour_pairs), dtype=float)
     
     quantile_plot = ax.contour(x_2d, y_2d, computed_values, colors=[color]*len(t_contours), 
                                 levels=t_contours, linewidths=[linewidths]*len(t_contours),
@@ -170,8 +204,15 @@ def add_contours(ax, x, y, a, b, color=default_pallete[0], linestyles='solid',
 
     if fill:
         cmax = computed_values.max()
-        for i, t_contour in enumerate(t_contours[::-1]):  # Reverse to fill from outer to inner quantile
-                ax.contourf(x_2d, y_2d, computed_values, levels=[t_contour, cmax], colors=[color], alpha=quantiles[i])
+        for q, t_contour in sorted(t_contour_pairs, key=lambda item: item[0]):
+                if not t_contour < cmax:
+                    continue
+                ax.contourf(
+                    x_2d, y_2d, computed_values,
+                    levels=[t_contour, cmax],
+                    colors=[color],
+                    alpha=_quantile_to_alpha(q, fill_alpha_map=fill_alpha_map),
+                )
 
         # Fill the region outside the last quantile with transparency
         cont = ax.contourf(x_2d, y_2d, computed_values, levels=[0, t_contours[0]], colors=[color], alpha=0)
@@ -311,42 +352,18 @@ def make_corner_plot(all_data : List,
                     if variables[i_col] in keys and variables[i_row] in keys:
                         # Plot histogram
                         if kde:
-                            if boundary_method in [None, 'none']:
-                                quantiles_sorted = quantiles.copy()
-                                quantiles_sorted.sort()
-                                if quantiles_sorted[-1] != 1:
-                                    quantiles_sorted_fill = quantiles_sorted + [1]
-                                else:
-                                    quantiles_sorted_fill = quantiles_sorted.copy()
-                                g = sns.kdeplot(data, x=variables[i_col], y=variables[i_row], 
-                                                ax=ax, color=colors[j], 
-                                                linestyles=linestyles[j],
-                                                linewidths=2,
-                                                levels=quantiles_sorted_fill,
-                                                fill=fill,
-                                                zorder=2, **kde_kwargs)
-                                if fill:
-                                    g = sns.kdeplot(data, x=variables[i_col], y=variables[i_row], 
-                                                    ax=ax, color=colors[j], 
-                                                    linestyles=linestyles[j], 
-                                                    linewidths=2,
-                                                    levels=quantiles_sorted,
-                                                    fill=False,
-                                                    zorder=2, **{k:v for k,v in kde_kwargs.items() if k != 'alpha'})
-                                g.set(xlabel=None); g.set(ylabel=None);
-                            else:
-                                quantiles_sorted = quantiles.copy()
-                                quantiles_sorted.sort(reverse=True)
-                                x_lims = boundaries.get(variables[i_col], [min_lim_x, max_lim_x])
-                                y_lims = boundaries.get(variables[i_row], [min_lim_y, max_lim_y])
-                                add_contours(ax, x=data[variables[i_col]], 
-                                                 y=data[variables[i_row]], 
-                                                 a=np.array([x_lims[0], y_lims[0]]), 
-                                                 b=np.array([x_lims[1], y_lims[1]]),
-                                                 color=colors[j], linestyles=linestyles[j],
-                                                 linewidths=2, quantiles=quantiles_sorted, fill=fill,
-                                                 boundary_method=boundary_method)
-                                ax.set_xlabel(None); ax.set_ylabel(None);
+                            quantiles_sorted = quantiles.copy()
+                            quantiles_sorted.sort(reverse=True)
+                            x_lims = boundaries.get(variables[i_col], [min_lim_x, max_lim_x])
+                            y_lims = boundaries.get(variables[i_row], [min_lim_y, max_lim_y])
+                            add_contours(ax, x=data[variables[i_col]], 
+                                             y=data[variables[i_row]], 
+                                             a=np.array([x_lims[0], y_lims[0]]), 
+                                             b=np.array([x_lims[1], y_lims[1]]),
+                                             color=colors[j], linestyles=linestyles[j],
+                                             linewidths=2, quantiles=quantiles_sorted, fill=fill,
+                                             boundary_method=boundary_method)
+                            ax.set_xlabel(None); ax.set_ylabel(None);
 
                         if scatter:
                             if 'alpha' in scatter_kwargs.keys():
@@ -409,16 +426,26 @@ def make_2D_comparison2(posterior_samples_list,
                        colors=None,
                        scatter=False,
                        alpha=0.1,
+                       scatter_size=10,
+                       fill=True,
+                       fill_alpha_map=None,
                        figsize=(6, 6),
                        dpi=200,
                        grid_size=100, bins=None,
                        boundary_method='truncnorm'):
+    user_provided_model_labels = model_labels is not None
     if not isinstance(posterior_samples_list, list):
         posterior_samples_list = [posterior_samples_list]
 
     n = len(posterior_samples_list)
     if model_labels is None:
-        model_labels = [f'Set {i+1}' for i in range(n)]
+        if n == 1:
+            model_labels = []
+        else:
+            model_labels = [
+                _DEFAULT_MODEL_LABELS[i] if i < len(_DEFAULT_MODEL_LABELS) else f'Set {i+1}'
+                for i in range(n)
+            ]
     if colors is None:
         colors = [default_pallete[i + 1] for i in range(n)]
 
@@ -446,10 +473,18 @@ def make_2D_comparison2(posterior_samples_list,
         color = colors[i]
         x_values = _get_series_values(ps, x_name)
         y_values = _get_series_values(ps, y_name)
+        mask = np.isfinite(x_values) & np.isfinite(y_values)
+        mask &= (x_values >= a[0]) & (x_values <= b[0])
+        mask &= (y_values >= a[1]) & (y_values <= b[1])
+        x_values = x_values[mask]
+        y_values = y_values[mask]
+
+        if len(x_values) == 0:
+            continue
 
         if scatter:
             ax_scatter.scatter(
-                x_values, y_values, color=color, alpha=alpha, s=10, edgecolors='none'
+                x_values, y_values, color=color, alpha=alpha, s=scatter_size, edgecolors='none'
             )
             ax_scatter.set_xlim(a[0], b[0])
             ax_scatter.set_ylim(a[1], b[1])
@@ -457,20 +492,21 @@ def make_2D_comparison2(posterior_samples_list,
             add_contours(
                 ax_scatter, x_values, y_values, a=np.array(a), b=np.array(b),
                 quantiles=quantiles, color=color, boundary_method=boundary_method,
-                gridsize=grid_size, bandwidth_scale=bandwidth_scale
+                gridsize=grid_size, bandwidth_scale=bandwidth_scale,
+                fill=fill, fill_alpha_map=fill_alpha_map
             )
 
-        hist_x, _ = np.histogram(x_values, bins=bin_x, density=True)
-        ax_hist_x.hist(x_values, bins=bin_x, density=True,
+        hist_x, _ = np.histogram(x_values, bins=bin_x, range=(a[0], b[0]), density=True)
+        ax_hist_x.hist(x_values, bins=bin_x, range=(a[0], b[0]), density=True,
                        color=color, histtype='step', linewidth=2)
-        ax_hist_x.hist(x_values, bins=bin_x, density=True,
+        ax_hist_x.hist(x_values, bins=bin_x, range=(a[0], b[0]), density=True,
                        color=color, histtype='bar', alpha=0.5)
         all_hist_x.append(hist_x)
 
-        hist_y, _ = np.histogram(y_values, bins=bin_y, density=True)
-        ax_hist_y.hist(y_values, bins=bin_y, density=True,
+        hist_y, _ = np.histogram(y_values, bins=bin_y, range=(a[1], b[1]), density=True)
+        ax_hist_y.hist(y_values, bins=bin_y, range=(a[1], b[1]), density=True,
                        orientation='horizontal', color=color, histtype='step', linewidth=2)
-        ax_hist_y.hist(y_values, bins=bin_y, density=True,
+        ax_hist_y.hist(y_values, bins=bin_y, range=(a[1], b[1]), density=True,
                        orientation='horizontal', color=color, histtype='bar', alpha=0.5)
         all_hist_y.append(hist_y)
 
@@ -484,10 +520,16 @@ def make_2D_comparison2(posterior_samples_list,
     plt.setp(ax_hist_y.get_xticklabels(), visible=False)
     plt.setp(ax_hist_y.get_yticklabels(), visible=False)
 
+    ax_scatter.set_xlim(a[0], b[0])
+    ax_scatter.set_ylim(a[1], b[1])
+    ax_hist_x.set_xlim(a[0], b[0])
+    ax_hist_y.set_ylim(a[1], b[1])
+
     ax_scatter.set_xlabel(variable_labels[0])
     ax_scatter.set_ylabel(variable_labels[1])
 
-    if legend:
+    show_legend = legend and (user_provided_model_labels or n > 1)
+    if show_legend:
         handles = [Line2D([], [], color=colors[i], ls='solid', label=model_labels[i])
                    for i in range(n)]
         leg = ax_scatter.legend(handles=handles, loc=legend_location, fontsize=15, frameon=True)
