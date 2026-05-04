@@ -1,6 +1,8 @@
 import numpy as np
 import pandas as pd
 
+global HAS_BEEN_EVALED 
+
 HAS_BEEN_EVALED = False
 
 eval_string = """
@@ -54,9 +56,11 @@ end
 """
 
 def get_correlations(mu1, sig1, mu2, sig2, rho, a=[0.0, 0.0], b=[1.0, 1.0]):
+    global HAS_BEEN_EVALED 
     if not HAS_BEEN_EVALED:
         print("Importing truncatedgaussianmixtures, install it if you want to use this function")
         from truncatedgaussianmixtures import jl
+        from truncatedgaussianmixtures import juliacall
         testfunc = jl.seval(eval_string)
         HAS_BEEN_EVALED = True
 
