@@ -107,6 +107,8 @@ fig, axes = make_corner_plot(
 );
 ```
 
+<img src="./examples/example_inferred_variables.png" width="900" />
+
 For the more flexible side-by-side 2D comparison layout, use `make_2D_comparison2`:
 
 ```python
@@ -120,6 +122,8 @@ fig = make_2D_comparison2(
 )
 ```
 
+<img src="./examples/example_2D_comparison_single.png" width="600" />
+
 ```python
 fig = make_2D_comparison2(
     [df1, df2],
@@ -132,3 +136,20 @@ fig = make_2D_comparison2(
     boundary_method="reflection",
 )
 ```
+
+<img src="./examples/example_2D_comparison_multi.png" width="600" />
+
+You can also draw a scatter plot instead of KDE contours. Each dataset gets a fixed color from the package palette:
+
+```python
+fig = make_2D_comparison2(
+    [df1, df2],
+    variables=["x1", "x2"],
+    variable_labels=[r"$x_1$", r"$x_2$"],
+    a=[-3, -3], b=[3, 3],
+    scatter=True,
+    model_labels=["first", "second"],
+)
+```
+
+<img src="./examples/example_2D_comparison_scatter.png" width="600" />

@@ -432,7 +432,8 @@ def make_2D_comparison2(posterior_samples_list,
                        figsize=(6, 6),
                        dpi=200,
                        grid_size=100, bins=None,
-                       boundary_method='truncnorm'):
+                       boundary_method='truncnorm',
+                       marginals=True):
     user_provided_model_labels = model_labels is not None
     if not isinstance(posterior_samples_list, list):
         posterior_samples_list = [posterior_samples_list]
@@ -452,13 +453,18 @@ def make_2D_comparison2(posterior_samples_list,
     x_name, y_name = variables
 
     fig = plt.figure(figsize=figsize, dpi=dpi)
-    gs = gridspec.GridSpec(2, 2,
-                           width_ratios=[0.8, 0.2],
-                           height_ratios=[0.2, 0.8])
 
-    ax_scatter = fig.add_subplot(gs[1, 0])
-    ax_hist_x = fig.add_subplot(gs[0, 0], sharex=ax_scatter)
-    ax_hist_y = fig.add_subplot(gs[1, 1], sharey=ax_scatter)
+    if marginals:
+        gs = gridspec.GridSpec(2, 2,
+                               width_ratios=[0.8, 0.2],
+                               height_ratios=[0.2, 0.8])
+        ax_scatter = fig.add_subplot(gs[1, 0])
+        ax_hist_x = fig.add_subplot(gs[0, 0], sharex=ax_scatter)
+        ax_hist_y = fig.add_subplot(gs[1, 1], sharey=ax_scatter)
+    else:
+        ax_scatter = fig.add_subplot(111)
+        ax_hist_x = None
+        ax_hist_y = None
 
     if bins is None:
         bin_x = bin_y = 'auto'
@@ -496,34 +502,37 @@ def make_2D_comparison2(posterior_samples_list,
                 fill=fill, fill_alpha_map=fill_alpha_map
             )
 
-        hist_x, _ = np.histogram(x_values, bins=bin_x, range=(a[0], b[0]), density=True)
-        ax_hist_x.hist(x_values, bins=bin_x, range=(a[0], b[0]), density=True,
-                       color=color, histtype='step', linewidth=2)
-        ax_hist_x.hist(x_values, bins=bin_x, range=(a[0], b[0]), density=True,
-                       color=color, histtype='bar', alpha=0.5)
-        all_hist_x.append(hist_x)
+        if marginals:
+            hist_x, _ = np.histogram(x_values, bins=bin_x, range=(a[0], b[0]), density=True)
+            ax_hist_x.hist(x_values, bins=bin_x, range=(a[0], b[0]), density=True,
+                           color=color, histtype='step', linewidth=2)
+            ax_hist_x.hist(x_values, bins=bin_x, range=(a[0], b[0]), density=True,
+                           color=color, histtype='bar', alpha=0.5)
+            all_hist_x.append(hist_x)
 
-        hist_y, _ = np.histogram(y_values, bins=bin_y, range=(a[1], b[1]), density=True)
-        ax_hist_y.hist(y_values, bins=bin_y, range=(a[1], b[1]), density=True,
-                       orientation='horizontal', color=color, histtype='step', linewidth=2)
-        ax_hist_y.hist(y_values, bins=bin_y, range=(a[1], b[1]), density=True,
-                       orientation='horizontal', color=color, histtype='bar', alpha=0.5)
-        all_hist_y.append(hist_y)
+            hist_y, _ = np.histogram(y_values, bins=bin_y, range=(a[1], b[1]), density=True)
+            ax_hist_y.hist(y_values, bins=bin_y, range=(a[1], b[1]), density=True,
+                           orientation='horizontal', color=color, histtype='step', linewidth=2)
+            ax_hist_y.hist(y_values, bins=bin_y, range=(a[1], b[1]), density=True,
+                           orientation='horizontal', color=color, histtype='bar', alpha=0.5)
+            all_hist_y.append(hist_y)
 
-    if all_hist_x:
-        ax_hist_x.set_ylim(0, max(float(np.max(p)) for p in all_hist_x) * 1.1)
-    if all_hist_y:
-        ax_hist_y.set_xlim(1e-2, max(float(np.max(p)) for p in all_hist_y) * 1.1)
+    if marginals:
+        if all_hist_x:
+            ax_hist_x.set_ylim(0, max(float(np.max(p)) for p in all_hist_x) * 1.1)
+        if all_hist_y:
+            ax_hist_y.set_xlim(1e-2, max(float(np.max(p)) for p in all_hist_y) * 1.1)
 
-    plt.setp(ax_hist_x.get_xticklabels(), visible=False)
-    plt.setp(ax_hist_x.get_yticklabels(), visible=False)
-    plt.setp(ax_hist_y.get_xticklabels(), visible=False)
-    plt.setp(ax_hist_y.get_yticklabels(), visible=False)
+        plt.setp(ax_hist_x.get_xticklabels(), visible=False)
+        plt.setp(ax_hist_x.get_yticklabels(), visible=False)
+        plt.setp(ax_hist_y.get_xticklabels(), visible=False)
+        plt.setp(ax_hist_y.get_yticklabels(), visible=False)
+
+        ax_hist_x.set_xlim(a[0], b[0])
+        ax_hist_y.set_ylim(a[1], b[1])
 
     ax_scatter.set_xlim(a[0], b[0])
     ax_scatter.set_ylim(a[1], b[1])
-    ax_hist_x.set_xlim(a[0], b[0])
-    ax_hist_y.set_ylim(a[1], b[1])
 
     ax_scatter.set_xlabel(variable_labels[0])
     ax_scatter.set_ylabel(variable_labels[1])
