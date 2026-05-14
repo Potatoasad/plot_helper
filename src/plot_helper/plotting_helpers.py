@@ -546,7 +546,7 @@ def make_2D_comparison2(posterior_samples_list,
         leg.get_frame().set_edgecolor('none')
 
     plt.tight_layout()
-    plt.show()
+    #plt.show()
     return fig
 
 
@@ -650,6 +650,6 @@ def make_2D_comparison(posterior_samples,
         thelegend.get_frame().set_edgecolor('none')
     # Tighten the layout
     plt.tight_layout()
-    plt.show()
+    #plt.show()
 
     return fig
