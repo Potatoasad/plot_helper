@@ -8,6 +8,78 @@ My custom library to perform quick corner / histogram plots to my liking. Pretty
 
 Please let me know if there's something I could be doing better with the styling for a publication ready plot 
 
+Global Plot Defaults
+===============================================================
+
+The package now has a mutable global defaults object. By default it uses a square figure sized to the AAS/ApJ half-column width, which is a good default for many corner plots:
+
+```python
+from plot_helper import PLOT_DEFAULTS
+
+print(PLOT_DEFAULTS)
+```
+
+The global default instance stores:
+
+- `figsize`
+- `dpi`
+- `latex_font_size`
+- `usetex`
+
+and the plotting helpers use those values unless you override them in a specific function call.
+
+To edit the global defaults on the fly:
+
+```python
+from plot_helper import configure_plot_defaults
+
+configure_plot_defaults(
+    latex_font_size="scriptsize",
+    dpi=200,
+)
+```
+
+If you want the built-in half-column square configuration explicitly, you can still do:
+
+```python
+from plot_helper import use_apj_half_column_defaults
+
+use_apj_half_column_defaults(latex_font_size="scriptsize")
+```
+
+The supported LaTeX-style font names are:
+`"tiny"`, `"scriptsize"`, `"footnotesize"`, `"small"`, `"normalsize"`, `"large"`, `"Large"`, `"LARGE"`, `"huge"`, `"Huge"`.
+
+Following the same idea discussed in Leo Stein's `latex-mpl-fig-tips`, you can also build figure sizes from exact LaTeX widths:
+
+```python
+from plot_helper import figure_size_from_width
+
+half_col_square = figure_size_from_width(3.39375, aspect_ratio=1.0)   # inches
+prd_onecol = figure_size_from_width(246, aspect_ratio=0.62, units="pt")  # TeX points
+```
+
+If you only want the size preset for a single figure, you can pass it directly:
+
+```python
+from plot_helper import make_2D_comparison2
+
+fig = make_2D_comparison2(
+    df1,
+    variables=["x1", "x2"],
+    variable_labels=[r"$x_1$", r"$x_2$"],
+    a=[-3, -3], b=[3, 3],
+    figure_preset="apj_half_column_square",
+)
+```
+
+You can also inspect the numeric preset values:
+
+```python
+from plot_helper import APJ_HALF_COLUMN_SQUARE_FIGSIZE, APJ_DEFAULT_DPI
+print(APJ_HALF_COLUMN_SQUARE_FIGSIZE, APJ_DEFAULT_DPI)
+```
+
 
 Usage
 ===============================================================

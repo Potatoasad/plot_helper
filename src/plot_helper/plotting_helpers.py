@@ -1,28 +1,193 @@
 import os
 import numpy as np
 import matplotlib.colors
+import matplotlib as mpl
 import matplotlib.pyplot as plt
 from matplotlib import style
 import jax.numpy as jnp
 import seaborn as sns
 from typing import List, Dict, Tuple, Optional
+from dataclasses import dataclass
 from matplotlib.lines import Line2D
 import scipy
 from .makeCorner import getBounds
 
 #style.use(os.path.dirname(os.path.realpath(__file__))+'/plotting.mplstyle')
+import shutil
 from importlib.resources import files, as_file
 from matplotlib import style as mpl_style
+
+AASTEX_TEXT_WIDTH_IN = 7.1
+AASTEX_COLUMN_SEP_IN = 0.3125
+APJ_HALF_COLUMN_WIDTH_IN = (AASTEX_TEXT_WIDTH_IN - AASTEX_COLUMN_SEP_IN) / 2
+APJ_HALF_COLUMN_SQUARE_FIGSIZE = (APJ_HALF_COLUMN_WIDTH_IN, APJ_HALF_COLUMN_WIDTH_IN)
+APJ_DEFAULT_DPI = 200
+TEX_POINTS_PER_INCH = 72.27
+
+LATEX_FONT_SIZES_PT = {
+    "tiny": 5.0,
+    "scriptsize": 7.0,
+    "footnotesize": 8.0,
+    "small": 9.0,
+    "normalsize": 10.0,
+    "large": 12.0,
+    "Large": 14.4,
+    "LARGE": 17.28,
+    "huge": 20.74,
+    "Huge": 24.88,
+}
+
+FIGURE_PRESETS = {
+    "apj_half_column_square": {
+        "figsize": APJ_HALF_COLUMN_SQUARE_FIGSIZE,
+        "dpi": APJ_DEFAULT_DPI,
+    },
+}
+
+@dataclass
+class PlotDefaults:
+    figsize: Tuple[float, float] = APJ_HALF_COLUMN_SQUARE_FIGSIZE
+    dpi: int = APJ_DEFAULT_DPI
+    latex_font_size: str = "scriptsize"
+    usetex: Optional[bool] = None
+
+    def apply(self):
+        set_plot_defaults(
+            figsize=self.figsize,
+            dpi=self.dpi,
+            latex_font_size=self.latex_font_size,
+            usetex=self.usetex,
+        )
+
+PLOT_DEFAULTS = PlotDefaults()
+
+def _tex_available():
+    return shutil.which("latex") is not None
 
 def use_default_style():
     res = files("plot_helper").joinpath("plotting.mplstyle")
     with as_file(res) as p:
         mpl_style.use(str(p))
+    if not _tex_available():
+        plt.rcParams["text.usetex"] = False
 
 # Auto-apply on import (optional):
 use_default_style()
 default_pallete = sns.color_palette('Dark2', 20)
 _DEFAULT_MODEL_LABELS = list("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
+
+def get_latex_font_size(size):
+    if isinstance(size, str):
+        if size not in LATEX_FONT_SIZES_PT:
+            valid = ", ".join(LATEX_FONT_SIZES_PT)
+            raise ValueError(f"Unknown LaTeX font size '{size}'. Choose from: {valid}.")
+        return LATEX_FONT_SIZES_PT[size]
+    return float(size)
+
+def get_figure_preset(name="apj_half_column_square"):
+    if name not in FIGURE_PRESETS:
+        valid = ", ".join(FIGURE_PRESETS)
+        raise ValueError(f"Unknown figure preset '{name}'. Choose from: {valid}.")
+    preset = FIGURE_PRESETS[name]
+    return {
+        "figsize": tuple(preset["figsize"]),
+        "dpi": int(preset["dpi"]),
+    }
+
+def tex_points_to_inches(value):
+    return float(value) / TEX_POINTS_PER_INCH
+
+def figure_size_from_width(width, aspect_ratio=1.0, units="in"):
+    if units == "pt":
+        width = tex_points_to_inches(width)
+    elif units != "in":
+        raise ValueError("units must be 'in' or 'pt'.")
+    width = float(width)
+    aspect_ratio = float(aspect_ratio)
+    return (width, width * aspect_ratio)
+
+def set_plot_defaults(
+    figsize=None,
+    figure_preset=None,
+    latex_font_size=None,
+    dpi=None,
+    usetex=None,
+):
+    if figure_preset is not None and figsize is None:
+        preset = get_figure_preset(figure_preset)
+        figsize = preset["figsize"]
+        if dpi is None:
+            dpi = preset["dpi"]
+
+    if figsize is not None:
+        mpl.rcParams["figure.figsize"] = tuple(figsize)
+
+    if dpi is not None:
+        mpl.rcParams["figure.dpi"] = dpi
+        mpl.rcParams["savefig.dpi"] = dpi
+
+    if latex_font_size is not None:
+        font_size_pt = get_latex_font_size(latex_font_size)
+        mpl.rcParams["font.size"] = font_size_pt
+        mpl.rcParams["axes.labelsize"] = font_size_pt
+        mpl.rcParams["axes.titlesize"] = font_size_pt
+        mpl.rcParams["xtick.labelsize"] = font_size_pt
+        mpl.rcParams["ytick.labelsize"] = font_size_pt
+        mpl.rcParams["legend.fontsize"] = font_size_pt
+
+    if usetex is not None:
+        mpl.rcParams["text.usetex"] = bool(usetex) and _tex_available()
+
+def configure_plot_defaults(figsize=None, figure_preset=None, latex_font_size=None, dpi=None, usetex=None):
+    if figure_preset is not None and figsize is None:
+        preset = get_figure_preset(figure_preset)
+        figsize = preset["figsize"]
+        if dpi is None:
+            dpi = preset["dpi"]
+
+    if figsize is not None:
+        PLOT_DEFAULTS.figsize = tuple(figsize)
+    if dpi is not None:
+        PLOT_DEFAULTS.dpi = int(dpi)
+    if latex_font_size is not None:
+        if isinstance(latex_font_size, str):
+            get_latex_font_size(latex_font_size)
+        else:
+            latex_font_size = float(latex_font_size)
+        PLOT_DEFAULTS.latex_font_size = latex_font_size
+    if usetex is not None:
+        PLOT_DEFAULTS.usetex = bool(usetex)
+
+    PLOT_DEFAULTS.apply()
+    return PLOT_DEFAULTS
+
+def use_apj_half_column_defaults(latex_font_size="scriptsize", dpi=APJ_DEFAULT_DPI, usetex=None):
+    return configure_plot_defaults(
+        figure_preset="apj_half_column_square",
+        latex_font_size=latex_font_size,
+        dpi=dpi,
+        usetex=usetex,
+    )
+
+def _resolve_fontsize(explicit_size, rc_key):
+    if explicit_size is None:
+        return mpl.rcParams[rc_key]
+    return get_latex_font_size(explicit_size)
+
+def _resolve_figure_geometry(figsize=None, dpi=None, figure_preset=None):
+    if figure_preset is not None:
+        preset = get_figure_preset(figure_preset)
+        if figsize is None:
+            figsize = preset["figsize"]
+        if dpi is None:
+            dpi = preset["dpi"]
+    if figsize is None:
+        figsize = tuple(PLOT_DEFAULTS.figsize)
+    if dpi is None:
+        dpi = PLOT_DEFAULTS.dpi
+    return figsize, dpi
+
+PLOT_DEFAULTS.apply()
 
 def makedict(x):
     return {k : jnp.array(x[k].values) for k in x.columns}
@@ -226,12 +391,15 @@ def make_corner_plot(all_data : List,
                      cp=default_pallete,
                      colors=[default_pallete[1], default_pallete[2], 'black'],
                      linestyles=['solid', 'solid', 'dashed'], alpha=0.02, 
+                     hist_linewidth=2,
+                     kde_linewidth=2,
                      kde=False, scatter=True, kde_kwargs={}, scatter_kwargs={},
-                     legend_x_position=None, legend_y_position=None, CI_fontsize=15,
+                     legend_x_position=None, legend_y_position=None, CI_fontsize=None,
                      boundary_bias=False, fill=True, quantiles=[0.9, 0.5], legend=True, 
                      boundaries={},
                      boundary_method=None,
-                     truth=None, figsize=None):
+                     truth=None, figsize=None, figure_preset=None,
+                     label_fontsize=None, tick_labelsize=None, legend_fontsize=None):
 
     if model_labels is None:
         model_labels = [''] * len(all_data)
@@ -258,9 +426,14 @@ def make_corner_plot(all_data : List,
 
      # Make figure 
     nVars = len(variables)
+    figsize, _ = _resolve_figure_geometry(figsize=figsize, figure_preset=figure_preset)
     if figsize is None:
         figsize = (nVars*3,nVars*3)
     fig, axes = plt.subplots(nVars, nVars, figsize=figsize)
+    ci_fontsize = _resolve_fontsize(CI_fontsize, "axes.titlesize")
+    label_fontsize = _resolve_fontsize(label_fontsize, "axes.labelsize")
+    tick_labelsize = _resolve_fontsize(tick_labelsize, "xtick.labelsize")
+    legend_fontsize = _resolve_fontsize(legend_fontsize, "legend.fontsize")
 
     one_d_plot = False
     #print(type(axes))
@@ -299,24 +472,24 @@ def make_corner_plot(all_data : List,
                 
                 # Plot histogram
                 ax.hist(samples, bins=np.linspace(min_lim,max_lim,nbins), histtype='step', 
-                            edgecolor=colors[j], lw=2, linestyle=linestyles[j], density=True, 
+                            edgecolor=colors[j], lw=hist_linewidth, linestyle=linestyles[j], density=True, 
                             zorder=2)
                 CIs.append(r"${0:.2f}^{{+{1:.2f}}}_{{-{2:.2f}}}$".format(*getBounds(samples)))
                 text_colors.append(colors[j])
         
         #ax.set_title("  ".join(CIs), fontsize=CI_fontsize)
-        set_multicolor_title(ax, CIs, text_colors)
+        set_multicolor_title(ax, CIs, text_colors, font_size=ci_fontsize)
         ax.xaxis.grid(True,which='major',ls=':',color='grey',alpha=0.5)
         ax.yaxis.grid(True,which='major',ls=':',color='grey',alpha=0.5)
         ax.set_xlim(min_lim,max_lim)
         ax.set_yticklabels([])
-        ax.tick_params(labelsize=18)
+        ax.tick_params(labelsize=tick_labelsize)
         if truth is not None:
             ax.axvline(truth[var], color=colors[j])
 
         # x-axis + tick labels depend on which specific axis 
         if i==(nVars-1):
-            ax.set_xlabel(label,fontsize=20)
+            ax.set_xlabel(label,fontsize=label_fontsize)
         else: 
             ax.set_xticklabels([])
 
@@ -361,7 +534,7 @@ def make_corner_plot(all_data : List,
                                              a=np.array([x_lims[0], y_lims[0]]), 
                                              b=np.array([x_lims[1], y_lims[1]]),
                                              color=colors[j], linestyles=linestyles[j],
-                                             linewidths=2, quantiles=quantiles_sorted, fill=fill,
+                                             linewidths=kde_linewidth, quantiles=quantiles_sorted, fill=fill,
                                              boundary_method=boundary_method)
                             ax.set_xlabel(None); ax.set_ylabel(None);
 
@@ -384,13 +557,13 @@ def make_corner_plot(all_data : List,
                 ax.yaxis.grid(True,which='major',ls=':',color='grey',alpha=0.5)
                 ax.set_xlim(min_lim_x,max_lim_x)
                 ax.set_ylim(min_lim_y,max_lim_y)
-                ax.tick_params(labelsize=18)
+                ax.tick_params(labelsize=tick_labelsize)
 
                 # labels depend on which specific axis
                 if i_row==nVars-1:
-                    ax.set_xlabel(label_x,fontsize=20)
+                    ax.set_xlabel(label_x,fontsize=label_fontsize)
                 if i_col==0: 
-                    ax.set_ylabel(label_y,fontsize=20)
+                    ax.set_ylabel(label_y,fontsize=label_fontsize)
 
                 # ticks also depend on which specific axis
                 if i_col!=0 and i_row!=nVars-1:
@@ -408,7 +581,7 @@ def make_corner_plot(all_data : List,
             legend_x_position = min([axes.shape[-1]-1, 4]);
         if legend_y_position is None:
             legend_y_position = 1;
-        axes[legend_y_position, legend_x_position].legend(handles=handles, loc='upper left', fontsize=20)
+        axes[legend_y_position, legend_x_position].legend(handles=handles, loc='upper left', fontsize=legend_fontsize)
 
     plt.subplots_adjust(hspace=0.1, wspace=0.1)
     return fig, axes
@@ -429,11 +602,12 @@ def make_2D_comparison2(posterior_samples_list,
                        scatter_size=10,
                        fill=True,
                        fill_alpha_map=None,
-                       figsize=(6, 6),
-                       dpi=200,
+                       figsize=None,
+                       dpi=None,
                        grid_size=100, bins=None,
                        boundary_method='truncnorm',
-                       marginals=True):
+                       marginals=True,
+                       figure_preset=None):
     user_provided_model_labels = model_labels is not None
     if not isinstance(posterior_samples_list, list):
         posterior_samples_list = [posterior_samples_list]
@@ -452,6 +626,7 @@ def make_2D_comparison2(posterior_samples_list,
 
     x_name, y_name = variables
 
+    figsize, dpi = _resolve_figure_geometry(figsize=figsize, dpi=dpi, figure_preset=figure_preset)
     fig = plt.figure(figsize=figsize, dpi=dpi)
 
     if marginals:
@@ -541,7 +716,12 @@ def make_2D_comparison2(posterior_samples_list,
     if show_legend:
         handles = [Line2D([], [], color=colors[i], ls='solid', label=model_labels[i])
                    for i in range(n)]
-        leg = ax_scatter.legend(handles=handles, loc=legend_location, fontsize=15, frameon=True)
+        leg = ax_scatter.legend(
+            handles=handles,
+            loc=legend_location,
+            fontsize=_resolve_fontsize(None, "legend.fontsize"),
+            frameon=True,
+        )
         leg.get_frame().set_facecolor(legend_face_color)
         leg.get_frame().set_edgecolor('none')
 

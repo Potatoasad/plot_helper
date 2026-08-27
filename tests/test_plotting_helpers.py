@@ -12,6 +12,18 @@ except ImportError:  # pragma: no cover
     pd = None
 
 from plot_helper import add_contours, make_2D_comparison2, make_corner_plot
+from plot_helper import (
+    APJ_DEFAULT_DPI,
+    APJ_HALF_COLUMN_SQUARE_FIGSIZE,
+    PLOT_DEFAULTS,
+    TEX_POINTS_PER_INCH,
+    configure_plot_defaults,
+    figure_size_from_width,
+    get_figure_preset,
+    get_latex_font_size,
+    tex_points_to_inches,
+    use_apj_half_column_defaults,
+)
 
 
 def _bounded_data(n=200):
@@ -231,6 +243,107 @@ class PlottingHelpersSmokeTests(unittest.TestCase):
         self.assertGreater(len(ax.collections), 0)
         _assert_contours_within_bounds(self, ax, (0.0, 1.0), (0.0, 1.0))
         self.assertIsNotNone(fig)
+
+    def test_make_corner_plot_accepts_hist_and_kde_linewidths(self):
+        data = _bounded_data()
+        fig, axes = make_corner_plot(
+            [data],
+            model_labels=[""],
+            variables=["x", "y"],
+            variable_labels=["x", "y"],
+            kde=True,
+            scatter=False,
+            hist_linewidth=4,
+            kde_linewidth=3,
+            boundary_method="reflection",
+            boundaries={"x": [0, 1], "y": [0, 1]},
+            legend=False,
+        )
+        diag_ax = axes[0, 0]
+        offdiag_ax = axes[1, 0]
+        self.assertAlmostEqual(diag_ax.patches[0].get_linewidth(), 4.0)
+        contour_linewidths = offdiag_ax.collections[0].get_linewidths()
+        self.assertTrue(np.allclose(contour_linewidths, 3.0))
+        self.assertIsNotNone(fig)
+
+    def test_latex_font_size_helper(self):
+        self.assertEqual(get_latex_font_size("scriptsize"), 7.0)
+        self.assertEqual(get_latex_font_size("tiny"), 5.0)
+        self.assertEqual(get_latex_font_size(9), 9.0)
+
+    def test_apj_half_column_preset_values(self):
+        preset = get_figure_preset("apj_half_column_square")
+        self.assertEqual(preset["figsize"], APJ_HALF_COLUMN_SQUARE_FIGSIZE)
+        self.assertEqual(preset["dpi"], APJ_DEFAULT_DPI)
+
+    def test_tex_points_helpers(self):
+        self.assertAlmostEqual(tex_points_to_inches(TEX_POINTS_PER_INCH), 1.0)
+        self.assertEqual(figure_size_from_width(3.4, aspect_ratio=1.0), (3.4, 3.4))
+        self.assertAlmostEqual(
+            figure_size_from_width(246, aspect_ratio=0.5, units="pt")[0],
+            246 / TEX_POINTS_PER_INCH,
+        )
+
+    def test_use_apj_half_column_defaults_updates_rcparams(self):
+        with matplotlib.rc_context():
+            use_apj_half_column_defaults(latex_font_size="tiny")
+            self.assertEqual(tuple(matplotlib.rcParams["figure.figsize"]), APJ_HALF_COLUMN_SQUARE_FIGSIZE)
+            self.assertEqual(matplotlib.rcParams["figure.dpi"], APJ_DEFAULT_DPI)
+            self.assertEqual(matplotlib.rcParams["savefig.dpi"], APJ_DEFAULT_DPI)
+            self.assertEqual(matplotlib.rcParams["font.size"], 5.0)
+            self.assertEqual(matplotlib.rcParams["axes.labelsize"], 5.0)
+            self.assertEqual(matplotlib.rcParams["legend.fontsize"], 5.0)
+
+    def test_configure_plot_defaults_updates_global_instance(self):
+        original = (
+            PLOT_DEFAULTS.figsize,
+            PLOT_DEFAULTS.dpi,
+            PLOT_DEFAULTS.latex_font_size,
+            PLOT_DEFAULTS.usetex,
+        )
+        try:
+            with matplotlib.rc_context():
+                defaults = configure_plot_defaults(figsize=(4.0, 2.0), dpi=123, latex_font_size="small")
+                self.assertIs(defaults, PLOT_DEFAULTS)
+                self.assertEqual(PLOT_DEFAULTS.figsize, (4.0, 2.0))
+                self.assertEqual(PLOT_DEFAULTS.dpi, 123)
+                self.assertEqual(PLOT_DEFAULTS.latex_font_size, "small")
+                self.assertEqual(tuple(matplotlib.rcParams["figure.figsize"]), (4.0, 2.0))
+                self.assertEqual(matplotlib.rcParams["figure.dpi"], 123)
+        finally:
+            PLOT_DEFAULTS.figsize, PLOT_DEFAULTS.dpi, PLOT_DEFAULTS.latex_font_size, PLOT_DEFAULTS.usetex = original
+            PLOT_DEFAULTS.apply()
+
+    def test_make_corner_plot_uses_global_default_figsize(self):
+        original = (PLOT_DEFAULTS.figsize, PLOT_DEFAULTS.dpi)
+        try:
+            PLOT_DEFAULTS.figsize = APJ_HALF_COLUMN_SQUARE_FIGSIZE
+            PLOT_DEFAULTS.dpi = APJ_DEFAULT_DPI
+            fig, _ = make_corner_plot(
+                [{"x": np.array([0.1, 0.2, 0.3]), "y": np.array([0.3, 0.4, 0.5])}],
+                variables=["x", "y"],
+                variable_labels=["x", "y"],
+                kde=False,
+                scatter=False,
+                legend=False,
+            )
+            self.assertEqual(tuple(fig.get_size_inches()), APJ_HALF_COLUMN_SQUARE_FIGSIZE)
+        finally:
+            PLOT_DEFAULTS.figsize, PLOT_DEFAULTS.dpi = original
+            PLOT_DEFAULTS.apply()
+
+    @patch("matplotlib.pyplot.show")
+    def test_make_2d_comparison2_uses_figure_preset(self, _show):
+        fig = make_2D_comparison2(
+            _bounded_data(),
+            variables=["x", "y"],
+            variable_labels=["x", "y"],
+            a=[0, 0],
+            b=[1, 1],
+            figure_preset="apj_half_column_square",
+        )
+        self.assertEqual(tuple(fig.get_size_inches()), APJ_HALF_COLUMN_SQUARE_FIGSIZE)
+        self.assertEqual(fig.dpi, APJ_DEFAULT_DPI)
 
 
 if __name__ == "__main__":
